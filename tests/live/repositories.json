@@ -1,0 +1,558 @@
+[
+  {
+    "repository": "AppFlowy-IO/AppFlowy",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "AppImage/appimagetool",
+    "type": "appimage",
+    "probe": "cli",
+    "arguments": [
+      "--version"
+    ]
+  },
+  {
+    "repository": "keepassxreboot/keepassxc",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "jgraph/drawio-desktop",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "obsidianmd/obsidian-releases",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "laurent22/joplin",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "audacity/audacity",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "FreeCAD/FreeCAD",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "mltframework/shotcut",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "Ultimaker/Cura",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "arduino/arduino-ide",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "beekeeper-studio/beekeeper-studio",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "JannisX11/blockbench",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "cryptomator/cryptomator",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "rizinorg/cutter",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "dbgate/dbgate",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "Tympanix/Electorrent",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "evpo/EncryptPad",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "endless-sky/endless-sky",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "szTheory/exifcleaner",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "Figma-Linux/figma-linux",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "yang991178/fluent-reader",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "fontforge/fontforge",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "frappe/books",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "FreeTubeApp/FreeTube",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "4ian/GDevelop",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "gaphor/gaphor",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "shiftkey/desktop",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "francescmm/GitQlient",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "saturneric/GpgFrontend",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "juzzlin/Heimer",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "hydrogen-music/hydrogen",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "WerWolv/ImHex",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "meowtec/Imagine",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "janhq/jan",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "JonMagon/KDiskMark",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "koreader/koreader",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "keeweb/keeweb",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "variar/klogg",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "kopia/kopia",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "LMMS/lmms",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "skyjake/lagrange",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "azagaya/laigter",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "leozide/leocad",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "LibreCAD/LibreCAD",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "LibreSprite/LibreSprite",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "mifi/lossless-cut",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "lyswhut/lx-music-desktop",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "thomasnordquist/MQTT-Explorer",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "mattermost/desktop",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "hainguyents13/mechvibes",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "Komet/MediaElch",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "cnr-isti-vclab/meshlab",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "MiniZinc/MiniZincIDE",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "samuelmeuli/mini-diary",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "moonlight-stream/moonlight-qt",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "agalwood/Motrix",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "KeitIG/museeks",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "mypaint/mypaint",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "naev/naev",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "ONLYOFFICE/appimage-desktopeditors",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "olive-editor/olive",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "OpenRA/OpenRA",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "mhoeher/opentodolist",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "morevnaproject/opentoonz",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "dannagle/PacketSender",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "mb21/panwriter",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "PhotoFlare/photoflare",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "Molunerfinn/PicGo",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "facontidavide/PlotJuggler",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "openstenoproject/plover",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "pulsar-edit/pulsar",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "zaps166/QMPlay2",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "martinrotter/rssguard",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "manojVivek/responsively-app",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "mortbopet/Ripes",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "rustdesk/rustdesk",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "smplayer-dev/smplayer",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "yishn/Sabaki",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "Serial-Studio/Serial-Studio",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "sourcegit-scm/sourcegit",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "Stellarium/stellarium",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "Subsurface-divelog/subsurface",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "oldj/SwitchHosts",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "synfig/synfig",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "texstudio-org/texstudio",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "bjorn/tiled",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "upscayl/upscayl",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "Zettlr/Zettlr",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "zulip/zulip-electron",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": []
+  },
+  {
+    "repository": "usekaneo/kaneo",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": [],
+    "note": "Compatibility boundary: web/server app or non-AppImage release; failure is retained."
+  },
+  {
+    "repository": "BurntSushi/ripgrep",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": [],
+    "note": "Compatibility boundary: web/server app or non-AppImage release; failure is retained."
+  }
+]

@@ -1,0 +1,60 @@
+[
+  {
+    "repository": "cnr-isti-vclab/meshlab",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [
+      "{home}/tetrahedron.stl"
+    ],
+    "files": {
+      "tetrahedron.stl": "solid obtain_tetrahedron\nfacet normal 0 0 1\n outer loop\n  vertex 0 0 0\n  vertex 10 0 0\n  vertex 0 10 0\n endloop\nendfacet\nfacet normal 0 -1 0\n outer loop\n  vertex 0 0 0\n  vertex 0 0 10\n  vertex 10 0 0\n endloop\nendfacet\nfacet normal -1 0 0\n outer loop\n  vertex 0 0 0\n  vertex 0 10 0\n  vertex 0 0 10\n endloop\nendfacet\nfacet normal 1 1 1\n outer loop\n  vertex 10 0 0\n  vertex 0 0 10\n  vertex 0 10 0\n endloop\nendfacet\nendsolid obtain_tetrahedron\n"
+    },
+    "probe_seconds": 50,
+    "note": "Qt/OpenGL mesh processing: load a generated tetrahedron and inspect its rendered viewport.",
+    "additional_probes": [
+      {
+        "label": "version",
+        "arguments": [
+          "--version"
+        ],
+        "seconds": 20,
+        "required": false
+      }
+    ],
+    "asset": "MeshLab2025.07-linux_x86_64.AppImage"
+  },
+  {
+    "repository": "OpenRA/OpenRA",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [],
+    "probe_seconds": 55,
+    "note": "Game engine with SDL/OpenGL/audio and optional mod downloads: inspect the initial launcher or menu only; do not download game assets.",
+    "asset": "OpenRA-Red-Alert-x86_64.AppImage",
+    "reject_output": [
+      "Couldn't find a valid ICU package",
+      "Aborted (core dumped)"
+    ]
+  },
+  {
+    "repository": "Stellarium/stellarium",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [],
+    "probe_seconds": 55,
+    "note": "Qt/OpenGL planetarium: inspect a rendered sky using the VM software renderer; no location service or telescope is needed.",
+    "additional_probes": [
+      {
+        "label": "landscapes",
+        "arguments": [
+          "--list-landscapes"
+        ],
+        "seconds": 30
+      }
+    ],
+    "asset": "Stellarium-26.3-qt6-x86_64.AppImage"
+  }
+]

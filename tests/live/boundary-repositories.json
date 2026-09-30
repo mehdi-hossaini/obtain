@@ -1,0 +1,18 @@
+[
+  {
+    "repository": "usekaneo/kaneo",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": [],
+    "note": "Compatibility boundary: web/server app or non-AppImage release; failure is retained."
+  },
+  {
+    "repository": "BurntSushi/ripgrep",
+    "type": "appimage",
+    "probe": "cli",
+    "arguments": [
+      "--help"
+    ],
+    "note": "Compatibility boundary: web/server app or non-AppImage release; failure is retained."
+  }
+]

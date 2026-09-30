@@ -1,0 +1,7 @@
+{
+  "include": ["obtain.py", "payload.py", "appimage.py", "tests"],
+  "extraPaths": ["tests"],
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Linux",
+  "typeCheckingMode": "off"
+}

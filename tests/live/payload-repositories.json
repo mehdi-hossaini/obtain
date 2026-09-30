@@ -1,0 +1,40 @@
+[
+  {
+    "repository": "BurntSushi/ripgrep",
+    "type": "archive",
+    "asset": "*x86_64-unknown-linux-musl.tar.gz",
+    "program": "rg",
+    "strip_components": 1,
+    "probe": "cli",
+    "arguments": [
+      "--version"
+    ]
+  },
+  {
+    "repository": "sharkdp/fd",
+    "type": "archive",
+    "asset": "*x86_64-unknown-linux-gnu.tar.gz",
+    "program": "fd",
+    "strip_components": 1,
+    "probe": "cli",
+    "arguments": [
+      "--version"
+    ]
+  },
+  {
+    "repository": "jqlang/jq",
+    "type": "binary",
+    "asset": "jq-linux-amd64",
+    "probe": "cli",
+    "arguments": [
+      "--version"
+    ]
+  },
+  {
+    "repository": "usekaneo/kaneo",
+    "type": "appimage",
+    "probe": "gui",
+    "arguments": [],
+    "note": "Boundary retry: no AppImage is expected; preserve actual result."
+  }
+]

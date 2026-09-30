@@ -1,0 +1,196 @@
+[
+  {
+    "repository": "arduino/arduino-ide",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [
+      "{home}/Blink/Blink.ino"
+    ],
+    "files": {
+      "Blink/Blink.ino": "// Obtain local sketch probe.\nvoid setup() { pinMode(LED_BUILTIN, OUTPUT); }\nvoid loop() { digitalWrite(LED_BUILTIN, HIGH); delay(1000); digitalWrite(LED_BUILTIN, LOW); delay(1000); }\n"
+    },
+    "probe_seconds": 55,
+    "note": "Electron IDE and bundled helper processes: open a local sketch without connecting hardware or installing board packages. Inspect the saved screenshot for the sketch."
+  },
+  {
+    "repository": "laurent22/joplin",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [],
+    "probe_seconds": 50,
+    "capture_files": [
+      ".config/joplin-desktop/database.sqlite"
+    ],
+    "note": "Electron/SQLite notes application: observe first-run desktop initialization without sign-in or synchronization; inspect its screenshot and captured local database when present."
+  },
+  {
+    "repository": "WerWolv/ImHex",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [
+      "{home}/sample.bin"
+    ],
+    "files": {
+      "sample.bin": "Obtain ImHex binary-view probe\n0123456789ABCDEF\n"
+    },
+    "probe_seconds": 50,
+    "note": "C++ hex editor with plugins and graphics dependencies: open a local binary sample and inspect the screenshot for its bytes.",
+    "additional_probes": [
+      {
+        "label": "help",
+        "arguments": [
+          "--help"
+        ],
+        "seconds": 20,
+        "required": false
+      }
+    ]
+  },
+  {
+    "repository": "LMMS/lmms",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [
+      "{home}/probe.mmp"
+    ],
+    "files": {
+      "probe.mmp": "<?xml version=\"1.0\"?>\n<!DOCTYPE lmms-project>\n<lmms-project version=\"1.0\" creator=\"LMMS\" creatorversion=\"1.2.2\" type=\"song\"><head timesig_numerator=\"4\" timesig_denominator=\"4\" bpm=\"120\" mastervol=\"100\" masterpitch=\"0\"/><song><trackcontainer type=\"song\"/></song></lmms-project>\n"
+    },
+    "probe_seconds": 50,
+    "note": "Qt/audio workstation: open a minimal local LMMS project and inspect the screenshot; no audio hardware or plugin download is required.",
+    "additional_probes": [
+      {
+        "label": "render-wav",
+        "arguments": [
+          "render",
+          "{home}/probe.mmp",
+          "--output",
+          "{home}/probe.wav",
+          "--format",
+          "wav"
+        ],
+        "seconds": 90,
+        "required": false
+      }
+    ]
+  },
+  {
+    "repository": "cnr-isti-vclab/meshlab",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [
+      "{home}/tetrahedron.stl"
+    ],
+    "files": {
+      "tetrahedron.stl": "solid obtain_tetrahedron\nfacet normal 0 0 1\n outer loop\n  vertex 0 0 0\n  vertex 10 0 0\n  vertex 0 10 0\n endloop\nendfacet\nfacet normal 0 -1 0\n outer loop\n  vertex 0 0 0\n  vertex 0 0 10\n  vertex 10 0 0\n endloop\nendfacet\nfacet normal -1 0 0\n outer loop\n  vertex 0 0 0\n  vertex 0 10 0\n  vertex 0 0 10\n endloop\nendfacet\nfacet normal 1 1 1\n outer loop\n  vertex 10 0 0\n  vertex 0 0 10\n  vertex 0 10 0\n endloop\nendfacet\nendsolid obtain_tetrahedron\n"
+    },
+    "probe_seconds": 50,
+    "note": "Qt/OpenGL mesh processing: load a generated tetrahedron and inspect its rendered viewport.",
+    "additional_probes": [
+      {
+        "label": "version",
+        "arguments": [
+          "--version"
+        ],
+        "seconds": 20,
+        "required": false
+      }
+    ]
+  },
+  {
+    "repository": "ONLYOFFICE/appimage-desktopeditors",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [
+      "{home}/document.rtf"
+    ],
+    "files": {
+      "document.rtf": "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Liberation Sans;}}\\f0\\fs24 Obtain office document probe.\\par Local content opens without an account.\\par}\n"
+    },
+    "probe_seconds": 60,
+    "note": "Large office AppImage with Chromium/Qt components: open a local RTF document and inspect its rendered page."
+  },
+  {
+    "repository": "OpenRA/OpenRA",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [],
+    "probe_seconds": 55,
+    "note": "Game engine with SDL/OpenGL/audio and optional mod downloads: inspect the initial launcher or menu only; do not download game assets.",
+    "reject_output": [
+      "Couldn't find a valid ICU package",
+      "Aborted (core dumped)"
+    ]
+  },
+  {
+    "repository": "Stellarium/stellarium",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [],
+    "probe_seconds": 55,
+    "note": "Qt/OpenGL planetarium: inspect a rendered sky using the VM software renderer; no location service or telescope is needed.",
+    "additional_probes": [
+      {
+        "label": "landscapes",
+        "arguments": [
+          "--list-landscapes"
+        ],
+        "seconds": 30
+      }
+    ]
+  },
+  {
+    "repository": "bjorn/tiled",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [
+      "{home}/map.tmx"
+    ],
+    "files": {
+      "map.tmx": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<map version=\"1.10\" tiledversion=\"1.11.2\" orientation=\"orthogonal\" renderorder=\"right-down\" width=\"4\" height=\"4\" tilewidth=\"16\" tileheight=\"16\" infinite=\"0\" nextlayerid=\"2\" nextobjectid=\"1\"><layer id=\"1\" name=\"Ground\" width=\"4\" height=\"4\"><data encoding=\"csv\">0,0,0,0,\n0,0,0,0,\n0,0,0,0,\n0,0,0,0</data></layer></map>\n"
+    },
+    "probe_seconds": 165,
+    "note": "Qt map editor: load a small local TMX map and inspect the visible grid. First-run GUI creation took about 78 seconds in the VM, so allow a longer observation window.",
+    "additional_probes": [
+      {
+        "label": "export-json",
+        "arguments": [
+          "--export-map",
+          "{home}/map.tmx",
+          "{home}/map.json"
+        ],
+        "seconds": 45
+      }
+    ],
+    "expected_files": {
+      "map.json": "\"orientation\""
+    }
+  },
+  {
+    "repository": "rustdesk/rustdesk",
+    "type": "auto",
+    "direct_add": true,
+    "probe": "gui",
+    "arguments": [],
+    "probe_seconds": 50,
+    "note": "Flutter/GTK remote desktop application: inspect the initial local UI only; do not initiate a remote session.",
+    "additional_probes": [
+      {
+        "label": "version",
+        "arguments": [
+          "--version"
+        ],
+        "seconds": 20
+      }
+    ]
+  }
+]

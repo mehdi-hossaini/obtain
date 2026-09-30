@@ -1,0 +1,59 @@
+name: Check Obtain
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_vm:
+        description: Run the offline NixOS VM check as well
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      - name: Check source and workflow
+        run: nix develop --no-update-lock-file -c just check
+      - name: Check packaged tests and build
+        run: nix develop --no-update-lock-file -c sh -c 'just check-unit && just build'
+      - name: Smoke check the packaged CLI in disposable XDG directories
+        run: |
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/obtain-config"
+          export XDG_DATA_HOME="$RUNNER_TEMP/obtain-data"
+          export XDG_CACHE_HOME="$RUNNER_TEMP/obtain-cache"
+          ./result/bin/obtain --help
+          ./result/bin/obtain --version
+          ./result/bin/obtain list
+
+  vm:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_vm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      - name: Check VM acceleration
+        run: |
+          if ! test -e /dev/kvm; then
+            echo 'The VM check needs a builder with KVM.' >&2
+            exit 1
+          fi
+          sudo chmod a+rw /dev/kvm
+      - name: Run offline lifecycle and reboot checks
+        run: nix develop --no-update-lock-file -c just check-vm

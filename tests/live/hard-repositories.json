@@ -1,0 +1,150 @@
+[
+  {
+    "repository": "AppFlowy-IO/AppFlowy",
+    "type": "auto",
+    "probe": "gui",
+    "arguments": [],
+    "note": "Flutter GUI, desktop libraries, stable visible window; no account or cloud workspace."
+  },
+  {
+    "repository": "FreeCAD/FreeCAD",
+    "type": "auto",
+    "probe": "gui",
+    "arguments": [
+      "{home}/probe.FCMacro"
+    ],
+    "files": {
+      "probe.FCMacro": "import FreeCAD as App\nimport FreeCADGui as Gui\nimport Part\ndoc = App.newDocument('ObtainProbe')\nbox = doc.addObject('Part::Box', 'ProbeBox')\nbox.Length = 10\nbox.Width = 15\nbox.Height = 20\ndoc.recompute()\nGui.activeDocument().activeView().viewAxonometric()\nGui.activeDocument().activeView().fitAll()\ndoc.saveAs('{home}/probe.FCStd')\nprint('OBTAIN_FREECAD_BOX_SAVED')\n"
+    },
+    "expected_files": {
+      "probe.FCStd": null
+    },
+    "note": "Large Qt/OpenGL AppImage; create, display and save a simple CAD object."
+  },
+  {
+    "repository": "zed-industries/zed",
+    "type": "auto",
+    "probe": "gui",
+    "arguments": [
+      "--foreground",
+      "{home}/project"
+    ],
+    "files": {
+      "project/main.rs": "fn main() { println!(\"Obtain runtime probe\"); }\n"
+    },
+    "note": "Desktop archive with helpers. Test-only emulated GPU override; trust only the generated project, edit and save main.rs.",
+    "capture_files": [
+      ".local/share/zed/logs/Zed.log"
+    ],
+    "environment": {
+      "ZED_ALLOW_EMULATED_GPU": "1"
+    },
+    "gui_actions": [
+      {
+        "seconds": 5,
+        "arguments": [
+          "key",
+          "Return"
+        ]
+      },
+      {
+        "seconds": 7,
+        "arguments": [
+          "key",
+          "ctrl+p"
+        ]
+      },
+      {
+        "seconds": 8,
+        "arguments": [
+          "type",
+          "--clearmodifiers",
+          "main.rs"
+        ]
+      },
+      {
+        "seconds": 9,
+        "arguments": [
+          "key",
+          "Return"
+        ]
+      },
+      {
+        "seconds": 11,
+        "arguments": [
+          "key",
+          "ctrl+End"
+        ]
+      },
+      {
+        "seconds": 12,
+        "arguments": [
+          "type",
+          "--clearmodifiers",
+          "\n// obtain verified\n"
+        ]
+      },
+      {
+        "seconds": 14,
+        "arguments": [
+          "key",
+          "ctrl+s"
+        ]
+      }
+    ],
+    "expected_files": {
+      "project/main.rs": "// obtain verified"
+    },
+    "expected_processes": [
+      "{home}/.local/share/zed/languages/rust-analyzer/"
+    ]
+  },
+  {
+    "repository": "neovim/neovim",
+    "type": "auto",
+    "probe": "cli",
+    "arguments": [
+      "--headless",
+      "-u",
+      "NONE",
+      "-n",
+      "{home}/sample.py",
+      "-c",
+      "syntax on",
+      "-c",
+      "set filetype=python",
+      "-c",
+      "lua assert(vim.fn.filereadable(vim.env.VIMRUNTIME .. '/syntax/python.vim') == 1); vim.api.nvim_buf_set_lines(0, 0, -1, false, {'print(\"obtain verified\")'}); print('OBTAIN_NVIM_RUNTIME_OK')",
+      "-c",
+      "wq"
+    ],
+    "files": {
+      "sample.py": "print('before')\n"
+    },
+    "expected_output": "OBTAIN_NVIM_RUNTIME_OK",
+    "expected_files": {
+      "sample.py": "print(\"obtain verified\")"
+    },
+    "note": "Verify bundled syntax runtime and a real file edit/save, not only version reporting."
+  },
+  {
+    "repository": "helix-editor/helix",
+    "type": "auto",
+    "probe": "pty",
+    "arguments": [
+      "{home}/sample.rs"
+    ],
+    "files": {
+      "sample.rs": "fn main() {}\n"
+    },
+    "input": [
+      "i// obtain verified\n",
+      "\u001b",
+      ":wq\r"
+    ],
+    "expected_files": {
+      "sample.rs": "// obtain verified"
+    },
+    "note": "Exercise terminal initialization, runtime discovery, and an interactive file edit/save."
+  }
+]

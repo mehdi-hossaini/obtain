@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+result
+result-*
+artifacts/
+.direnv/
+.ruff_cache/
