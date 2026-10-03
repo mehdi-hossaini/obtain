@@ -24,9 +24,11 @@ obtain list
 ```
 
 For a temporary session, use `nix shell github:mehdi-hossaini/obtain` instead of
-installing the CLI. Obtain prefers AppImages, then supported executable archives
-or binaries. Ambiguous choices prompt in a terminal and fail explicitly in
-scripts. Downloads are hashed and locked before installation.
+installing the CLI. Obtain prefers the main application's files over companion
+tools, then AppImages over supported archives or binaries. Ambiguous choices
+prompt in a terminal and fail explicitly in scripts. Downloads are hashed and
+locked before installation; menu choices follow version changes while preserving
+the selected platform and variant.
 
 | Command | Purpose |
 | --- | --- |
@@ -36,6 +38,7 @@ scripts. Downloads are hashed and locked before installation.
 | `check [NAME]` | Query upstream metadata without building or installing |
 | `update [NAME]` | Update one app or all unpinned apps |
 | `install NAME` | Install the saved lock |
+| `refresh-runtime NAME` | Refresh Nixpkgs and packaging while keeping the locked app release |
 | `pin NAME`, `unpin NAME` | Control whether an app participates in updates |
 | `rollback NAME` | Restore the previous retained generation and pin it |
 | `doctor NAME` | Diagnose the installation; `--json` provides a structured report |
@@ -44,10 +47,14 @@ scripts. Downloads are hashed and locked before installation.
 Use `obtain COMMAND --help` for flags. The [usage reference](docs/usage.md)
 explains selection overrides, archive limits, diagnostics, batch retry,
 Home Manager integration, XDG paths, and migration from earlier flake entries.
+`inspect`, `list`, and `check` also support `--json` for scripts.
 
 Applications run with your user permissions. Compatibility wrappers are not a
 security sandbox. Running installed applications requires working user
-namespaces and bubblewrap; some applications need a dedicated dependency recipe.
+namespaces and bubblewrap with the default FHS runtime. For self-contained
+archives or binaries, `add --runtime direct` omits that runtime to reduce the
+closure; it does not support unpatched helpers downloaded later by an app.
+Some applications need a dedicated dependency recipe.
 Rollback restores the executable and lock, not mutable application data.
 
 ## Develop and verify

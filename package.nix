@@ -9,6 +9,7 @@ pkgs.stdenvNoCC.mkDerivation {
       ./recipe.nix
       ./payload.py
       ./appimage.py
+      ./desktop.py
       ./build.nix
       ./flake.lock
     ];
@@ -18,7 +19,7 @@ pkgs.stdenvNoCC.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p "$out/lib/obtain" "$out/bin"
-    cp obtain.py payload.py appimage.py recipe.nix build.nix flake.lock "$out/lib/obtain/"
+    cp obtain.py payload.py appimage.py desktop.py recipe.nix build.nix flake.lock "$out/lib/obtain/"
     makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/obtain" \
       --add-flags "$out/lib/obtain/obtain.py"
     runHook postInstall

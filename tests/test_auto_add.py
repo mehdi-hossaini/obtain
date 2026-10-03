@@ -160,7 +160,8 @@ class DiscoveryTests(unittest.TestCase):
         ):
             result = self.discover(["one-linux-x64.tar.gz", "two[1]-linux-x64.tar.gz"])
         self.assertEqual(result["asset_name"], "two[1]-linux-x64.tar.gz")
-        self.assertEqual(self.source["asset"], "two[[]1]-linux-x64.tar.gz")
+        self.assertIsNone(self.source["asset"])
+        self.assertEqual(self.source["asset_variant"], "two[1]-linux-x64.tar.gz")
         with (
             patch.object(o.sys.stdin, "isatty", return_value=True),
             patch.object(o.sys.stderr, "isatty", return_value=True),

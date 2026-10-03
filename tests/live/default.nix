@@ -117,6 +117,7 @@ in
         shared_label = result_label if hard_only else "live"
         machine.succeed(f"install -d /tmp/shared/{shared_label}; install -d -o alice -g users {guest_results}")
         machine.succeed(f"cp {cohort} /tmp/repositories.json; cp ${./run.py} /tmp/live-run.py")
+        machine.succeed("cp ${obtain}/lib/obtain/obtain.py ${obtain}/lib/obtain/payload.py ${obtain}/lib/obtain/desktop.py /tmp/")
         if hard_only and os.environ.get("OBTAIN_LIVE_COHORT"):
             machine.copy_from_host(os.environ["OBTAIN_LIVE_COHORT"], "/tmp/repositories.json")
             expected_count = len(json.loads(machine.succeed("cat /tmp/repositories.json")))
@@ -169,9 +170,10 @@ in
         else:
             raise AssertionError("Live test exceeded eight hours; partial report preserved in shared directory")
         machine.copy_from_machine(guest_results, result_label)
-        report = json.loads(report_path.read_text())
+        report = json.loads(machine.succeed(f"cat {guest_results}/report.json"))
         assert len(report["results"]) == report["requested"] == expected_count
         print(json.dumps(report["counts"], indent=2))
+        assert not any(r["status"] == "running" for r in report["results"]), "Completed run contains unfinished cases"
         assert not any(r["status"] == "harness_error" for r in report["results"]), "Harness errors invalidate the run"
     finally:
         machine.shutdown()

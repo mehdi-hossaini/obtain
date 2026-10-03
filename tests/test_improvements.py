@@ -91,7 +91,7 @@ class AssetTests(unittest.TestCase):
                 o.choose_asset(gh, source())
             read.assert_not_called()
 
-    def test_interactive_choice_is_saved_as_literal_glob(self):
+    def test_interactive_choice_preserves_literal_variant_characters(self):
         src = source()
         choices = [asset("a.AppImage"), asset("b[1].AppImage")]
         gh = o.GitHub(Path("/unused"))
@@ -106,7 +106,8 @@ class AssetTests(unittest.TestCase):
             patch.object(o.sys.stdin, "readline", return_value="2\n"),
         ):
             o.choose_asset(gh, src)
-        self.assertEqual(o.select_asset(choices, src["asset"]), choices[1])
+        self.assertIsNone(src["asset"])
+        self.assertEqual(src["asset_variant"], "b[1].AppImage")
 
     def test_archive_program_rejects_traversal_and_shell_syntax(self):
         for value in ("../app", "/app", "a/../../b", "a b", "$(id)", None):

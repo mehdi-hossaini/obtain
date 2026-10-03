@@ -39,6 +39,7 @@ for row in original["results"]:
     home = Path("/home/alice/live-apps") / name
     env = dict(
         h.BASE,
+        **row.get("environment", {}),
         HOME=str(home),
         XDG_CONFIG_HOME=str(home / ".config"),
         XDG_DATA_HOME=str(home / ".local/share"),
@@ -55,7 +56,9 @@ for row in original["results"]:
     try:
         # Reconcile any interrupted prior removal before restoring captured state.
         recovery = h.command(["obtain", "list"], env, directory / "recovery.log")
-        assert recovery["exit"] == 0, "Existing CLI state must recover before a reprobe"
+        assert recovery["exit"] == 0 and not recovery["timeout"], (
+            "Existing CLI state must recover before a reprobe"
+        )
         state = home / ".config/obtain"
         state.mkdir(parents=True, exist_ok=True)
         prior_info = root / name / "info.log"
@@ -87,14 +90,15 @@ for row in original["results"]:
                 "pinned": False,
             }
             result["source_provenance"] = "recorded original add arguments"
-        for file, record in (("sources.json", source), ("lock.json", row["lock"])):
-            (state / file).write_text(json.dumps({"schema": 1, "apps": {name: record}}))
+        h.restore_locked_state(
+            state, name, source, row["lock"], h.captured_recipe(root, row, state)
+        )
         install = h.command(
             ["obtain", "install", name], env, directory / "install.log", timeout=600
         )
         result["installation"] = install
-        if install["exit"]:
-            result["status"] = "install_failed"
+        if install["exit"] or install["timeout"]:
+            result["status"] = h.failure(install, directory / "install.log", "install")
             # Preserve Nix's actual builder log to diagnose extraction failures.
             import re
 
@@ -109,23 +113,29 @@ for row in original["results"]:
             assert installed == row["lock"]
             result["installed_verified"] = True
             executable = str(data / "obtain/bin" / name)
+            arguments = [arg.replace("{home}", str(home)) for arg in row["arguments"]]
+            desktop = data / "applications" / f"obtain-{name}.desktop"
             if row["probe"] == "gui":
+                parsed = h.configparser.ConfigParser(interpolation=None)
+                parsed.read(desktop)
+                desktop_exec = h.desktop_command(parsed["Desktop Entry"], desktop)
                 result["runtime"] = h.gui_probe(
-                    executable, row["arguments"], env, directory
+                    desktop_exec[0], [*desktop_exec[1:], *arguments], env, directory
+                )
+                result["status"] = result["runtime"]["status"]
+            elif row["probe"] == "pty":
+                result["runtime"] = h.pty_probe(
+                    executable, arguments, row["input"], env, directory
                 )
                 result["status"] = result["runtime"]["status"]
             else:
                 result["runtime"] = h.command(
-                    [executable, *row["arguments"]],
+                    [executable, *arguments],
                     env,
                     directory / "launch.log",
                     timeout=30,
                 )
-                result["status"] = (
-                    "cli_startup_passed"
-                    if result["runtime"]["exit"] == 0
-                    else "launch_failed"
-                )
+                result["status"] = h.cli_status(result["runtime"])
             if (
                 result["status"] == "launch_failed"
                 and row["repository"] == "AppFlowy-IO/AppFlowy"
@@ -146,8 +156,12 @@ for row in original["results"]:
                 ["obtain", "remove", name], env, directory / "remove.log"
             )
             result["removal_verified"] = (
-                removal["exit"] == 0 and not Path(executable).exists()
+                removal["exit"] == 0
+                and not removal["timeout"]
+                and h.links_removed(Path(executable), desktop)
             )
+            if not result["removal_verified"]:
+                result["status"] = "removal_failed"
     except Exception:
         result.update(status="harness_error", error=traceback.format_exc())
     (root / "reprobes.json").write_text(json.dumps(report, indent=2) + "\n")

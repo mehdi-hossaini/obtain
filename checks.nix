@@ -10,6 +10,9 @@ pkgs.runCommand "obtain-tests"
         ./recipe.nix
         ./payload.py
         ./appimage.py
+        ./desktop.py
+        ./build.nix
+        ./tests/live/default.nix
         (pkgs.lib.fileset.fileFilter (file: file.hasExt "py") ./tests)
       ];
     };
