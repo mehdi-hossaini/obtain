@@ -1,5 +1,11 @@
 """Unpack release bundles without executing their contents (Nix build helper)."""
 
+import _compression
+import bz2
+from contextlib import contextmanager, ExitStack
+import gzip
+import io
+import lzma
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
@@ -7,6 +13,7 @@ import struct
 import sys
 import tarfile
 import zipfile
+import zlib
 
 MAX_BYTES = 4 * 1024**3
 MAX_FILES = 100_000
@@ -15,6 +22,202 @@ MAX_EXTENSION = 1024**2
 MAX_PATH_BYTES = 4096
 MAX_PATH_COMPONENTS = 128
 MAX_LINK_DEPTH = 32
+MAX_DECODER_BYTES = 128 * 1024**2
+
+
+class TarLzmaDecoder:
+    """Allow XZ stream padding while keeping errors in later streams fatal."""
+
+    def __init__(self, memlimit):
+        self.decoder = lzma.LZMADecompressor(lzma.FORMAT_AUTO, memlimit=memlimit)
+        self.started = self.padding_only = False
+        self.padding = 0
+
+    @property
+    def eof(self):
+        return self.decoder.eof or (self.padding_only and not self.padding % 4)
+
+    @property
+    def unused_data(self):
+        return self.decoder.unused_data
+
+    @property
+    def needs_input(self):
+        return self.decoder.needs_input
+
+    def decompress(self, data, max_length):
+        if not self.started:
+            trimmed = data.lstrip(b"\0")
+            self.padding += len(data) - len(trimmed)
+            if not trimmed:
+                self.padding_only = True
+                return b""
+            if self.padding % 4:
+                raise lzma.LZMAError("Invalid XZ stream padding")
+            self.started, self.padding_only = True, False
+            data = trimmed
+        return self.decoder.decompress(data, max_length)
+
+
+@contextmanager
+def checked_tar(source):
+    """Keep compressed tar reads incremental, including decoder dictionary memory."""
+    with ExitStack() as stack:
+        raw = stack.enter_context(Path(source).open("rb"))
+        signature = raw.read(6)
+        raw.seek(0)
+        if signature.startswith((b"\xfd7zXZ", b"\x5d\x00\x00\x80")):
+            stream = stack.enter_context(
+                io.BufferedReader(
+                    _compression.DecompressReader(
+                        raw,
+                        TarLzmaDecoder,
+                        memlimit=MAX_DECODER_BYTES,
+                    )
+                )
+            )
+        elif signature.startswith(b"\x1f\x8b\x08"):
+            stream = stack.enter_context(gzip.GzipFile(fileobj=raw))
+        elif signature.startswith(b"BZh"):
+            stream = stack.enter_context(bz2.BZ2File(raw))
+        else:
+            stream = raw
+        try:
+            with tarfile.open(
+                fileobj=stream, mode="r|", tarinfo=limited_tarinfo()
+            ) as archive:
+                yield archive
+        except (EOFError, lzma.LZMAError, zlib.error) as error:
+            raise ValueError(
+                "Archive compressed data is invalid or exceeds the decoder memory limit"
+            ) from error
+
+
+class CompressedMember:
+    """Read only one member's compressed bytes from ZipFile's validated offset."""
+
+    def __init__(self, stream, size):
+        self.stream, self.remaining = stream, size
+
+    def read(self, size):
+        data = self.stream.read(min(size, self.remaining))
+        self.remaining -= len(data)
+        return data
+
+
+class DeflateDecoder:
+    """Adapt zlib's unconsumed tail to the incremental decompressor interface."""
+
+    def __init__(self):
+        self.decoder = zlib.decompressobj(-15)
+
+    @property
+    def eof(self):
+        return self.decoder.eof
+
+    @property
+    def unused_data(self):
+        return self.decoder.unused_data
+
+    @property
+    def needs_input(self):
+        return not self.decoder.unconsumed_tail
+
+    def decompress(self, data, max_length):
+        return self.decoder.decompress(self.decoder.unconsumed_tail + data, max_length)
+
+
+class ZipLzmaDecoder:
+    def __init__(self, filters, raw, item):
+        self.decoder = lzma.LZMADecompressor(lzma.FORMAT_RAW, filters=[filters])
+        self.raw, self.item, self.count = raw, item, 0
+
+    @property
+    def eof(self):
+        # ZIP-LZMA may omit its end marker when general-purpose flag 1 is clear.
+        return self.decoder.eof or (
+            not self.item.flag_bits & 2
+            and not self.raw.remaining
+            and self.decoder.needs_input
+            and self.count == self.item.file_size
+        )
+
+    @property
+    def unused_data(self):
+        return self.decoder.unused_data
+
+    @property
+    def needs_input(self):
+        return self.decoder.needs_input
+
+    def decompress(self, data, max_length):
+        output = self.decoder.decompress(data, max_length)
+        self.count += len(output)
+        return output
+
+
+class ZipMember:
+    """Bound actual output before ZipExtFile can truncate it to its declared size."""
+
+    def __init__(self, stream, item):
+        self.stream, self.item = stream, item
+        self.count = self.crc = 0
+
+    def read(self, size):
+        amount = min(size, 1024 * 1024, self.item.file_size - self.count + 1)
+        data = self.stream.read(amount)
+        self.count += len(data)
+        if self.count > self.item.file_size:
+            raise ValueError("Archive member exceeds its declared size")
+        self.crc = zlib.crc32(data, self.crc)
+        if len(data) < amount:
+            if self.count != self.item.file_size:
+                raise ValueError("Truncated archive member")
+            if self.crc != self.item.CRC:
+                raise zipfile.BadZipFile(f"Bad CRC-32 for file {self.item.filename!r}")
+        return data
+
+
+@contextmanager
+def checked_zip_member(archive, item):
+    # ZipFile.open validates the local header, overlapping members, compression
+    # method and encryption before we read its compressed input. ZipExtFile's
+    # own BZIP2/LZMA readers allocate unbounded output and clip it to file_size.
+    try:
+        with archive.open(item) as member, ExitStack() as stack:
+            raw = CompressedMember(member._fileobj, item.compress_size)
+            if item.compress_type == zipfile.ZIP_STORED:
+                stream = raw
+            else:
+                if item.compress_type == zipfile.ZIP_DEFLATED:
+                    factory = DeflateDecoder
+                elif item.compress_type == zipfile.ZIP_BZIP2:
+                    factory = bz2.BZ2Decompressor
+                elif item.compress_type == zipfile.ZIP_LZMA:
+                    header = raw.read(4)
+                    if len(header) != 4 or struct.unpack_from("<H", header, 2)[0] != 5:
+                        raise ValueError("Invalid ZIP LZMA properties")
+                    properties = raw.read(5)
+                    if len(properties) != 5:
+                        raise ValueError("Truncated ZIP LZMA properties")
+                    filters = lzma._decode_filter_properties(
+                        lzma.FILTER_LZMA1, properties
+                    )
+                    if filters["dict_size"] > MAX_DECODER_BYTES:
+                        raise ValueError("Archive exceeds the decoder memory limit")
+
+                    def factory():
+                        return ZipLzmaDecoder(filters, raw, item)
+                else:
+                    raise ValueError("Unsupported ZIP compression method")
+                stream = stack.enter_context(
+                    io.BufferedReader(_compression.DecompressReader(raw, factory))
+                )
+            yield ZipMember(stream, item)
+    except (EOFError, lzma.LZMAError, zlib.error) as error:
+        raise ValueError(
+            "Archive compressed data is invalid or exceeds the decoder memory limit"
+        ) from error
 
 
 def checked_zip(source):
@@ -306,14 +509,14 @@ def extract(source, destination, strip_components=0):
                     raise ValueError("Invalid archive link")
                 path = target(item.filename, item.file_size, item.is_dir())
                 if symbolic:
-                    with archive.open(item) as stream:
+                    with checked_zip_member(archive, item) as stream:
                         link(path, stream.read(4097).decode("utf-8"))
                 elif not item.is_dir():
-                    with archive.open(item) as stream:
+                    with checked_zip_member(archive, item) as stream:
                         copy(stream, path, item.file_size, mode & 0o111)
     else:
         # Read sequentially and release cached TarInfo entries as we go.
-        with tarfile.open(source, mode="r|*", tarinfo=limited_tarinfo()) as archive:
+        with checked_tar(source) as archive:
             while (item := archive.next()) is not None:
                 archive.members.clear()
                 if not item.isdir() and not item.isfile() and not item.issym():
@@ -409,13 +612,13 @@ def discover_programs(source, strip_components=0):
                     raise ValueError("Invalid archive link")
                 path = index.target(item.filename, item.file_size, item.is_dir())
                 if symbolic:
-                    with archive.open(item) as stream:
+                    with checked_zip_member(archive, item) as stream:
                         index.link(path, stream.read(4097).decode("utf-8"))
                 elif not item.is_dir():
-                    with archive.open(item) as stream:
+                    with checked_zip_member(archive, item) as stream:
                         record_file(path, stream, item.file_size)
     else:
-        with tarfile.open(source, mode="r|*", tarinfo=limited_tarinfo()) as archive:
+        with checked_tar(source) as archive:
             while (item := archive.next()) is not None:
                 archive.members.clear()
                 if not item.isdir() and not item.isfile() and not item.issym():

@@ -163,6 +163,43 @@ let
           cc -DFIXTURE_BUNDLE program.c "$out/libobtain-fixture.so.1.0" -lGL -lz -ldl $(pkg-config --cflags --libs glib-2.0 alsa gtk+-3.0) -o "$out/bundled-$version"
           patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --remove-rpath "$out/bundled-$version"
         done
+        # The main executable's RUNPATH cannot satisfy dlopen() originating in
+        # a shared library. Test that caller's own graphics fallback paths.
+        mkdir -p graphics-helper/bin graphics-helper/lib
+        cat > graphics-helper.c <<'C'
+        #include <dlfcn.h>
+        #include <stdio.h>
+        int graphics_probe(void) {
+          void *library = dlopen("libfontconfig.so.1", RTLD_NOW);
+          if (!library) { fprintf(stderr, "%s\n", dlerror()); return 1; }
+          dlclose(library);
+          puts("shared-library graphics loaded");
+          return 0;
+        }
+        C
+        cat > graphics-main.c <<'C'
+        extern int graphics_probe(void);
+        int main(void) { return graphics_probe(); }
+        C
+        cc -shared -fPIC graphics-helper.c -ldl -Wl,-soname,libgraphics-probe.so.1 -o graphics-helper/lib/libgraphics-probe.so.1
+        cc graphics-main.c graphics-helper/lib/libgraphics-probe.so.1 -o graphics-helper/bin/app
+        patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --remove-rpath graphics-helper/bin/app
+        patchelf --remove-rpath graphics-helper/lib/libgraphics-probe.so.1
+
+        # A bundled library sharing a system graphics SONAME must remain first.
+        # The unique symbol makes substituting Nixpkgs Fontconfig observable.
+        mkdir -p graphics-precedence/bin graphics-precedence/lib
+        cat > graphics-bundled.c <<'C'
+        #include <stdio.h>
+        int graphics_probe(void) { puts("bundled graphics selected"); return 0; }
+        C
+        cc -shared -fPIC graphics-bundled.c -Wl,-soname,libfontconfig.so.1 -o graphics-precedence/lib/libfontconfig.so.1
+        cc graphics-main.c graphics-precedence/lib/libfontconfig.so.1 -o graphics-precedence/bin/app
+        patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --remove-rpath graphics-precedence/bin/app
+        patchelf --remove-rpath graphics-precedence/lib/libfontconfig.so.1
+        for fixture in graphics-helper graphics-precedence; do
+          tar -czf "$out/$fixture-1.tar.gz" -C "$fixture" --transform='s,^,bundle/,' bin lib
+        done
         python3 - "$out" <<'PYCODE'
         import io, stat, sys, tarfile, zipfile
         from pathlib import Path
@@ -170,9 +207,15 @@ let
         for version in (1, 2):
             binary = root / f"bundled-{version}"
             library = root / "libobtain-fixture.so.1.0"
+            desktop = b"[Desktop Entry]\nType=Application\nName=Fixture Application\nExec=app --fixture %U\nIcon=fixture\nTerminal=false\nMimeType=text/plain;\n"
+            icon = b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="blue"/></svg>'
             with tarfile.open(root / f"archive-{version}.tar.gz", "w:gz") as archive:
                 archive.add(binary, arcname="bundle/bin/app")
                 archive.add(library, arcname="bundle/lib/libobtain-fixture.so.1.0")
+                for name, data in (("share/applications/app.desktop", desktop), ("share/icons/fixture.svg", icon)):
+                    item = tarfile.TarInfo("bundle/" + name)
+                    item.size = len(data)
+                    archive.addfile(item, io.BytesIO(data))
                 link = tarfile.TarInfo("bundle/lib/libobtain-fixture.so.1")
                 link.type = tarfile.SYMTYPE
                 link.linkname = library.name

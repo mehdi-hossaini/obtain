@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import fcntl
 import fnmatch
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -48,6 +49,7 @@ IDENTITY = (
 MAX_GITHUB_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_GITHUB_CACHE_BYTES = 2 * MAX_GITHUB_RESPONSE_BYTES
 MAX_COMMAND_OUTPUT_BYTES = 8 * 1024 * 1024
+RECIPE_FILES = ("build.nix", "recipe.nix", "payload.py", "appimage.py", "desktop.py")
 
 
 class Error(Exception):
@@ -418,6 +420,12 @@ def default_pin():
     )
 
 
+def recipe_digest(files):
+    return hashlib.sha256(
+        json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         # GitHub API metadata never needs to send a token to a redirected host.
@@ -535,7 +543,12 @@ class GitHub:
                     "GitHub redirected this repository. Add its current canonical URL."
                 ) from e
             raise Error(f"GitHub API returned HTTP {e.code}.") from e
-        except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        except (
+            urllib.error.URLError,
+            http.client.HTTPException,
+            TimeoutError,
+            ValueError,
+        ) as e:
             raise Error(f"Could not read GitHub release metadata: {e}") from e
 
     def canonical_repository(self, repository_id):
@@ -603,13 +616,26 @@ class GitHub:
             raise Error("Nix flake entries must be managed directly with Nix.")
         release, assets = self.release_assets(source)
         release_id = int(release["id"])
-        if source.get("asset_family") and not source.get("asset"):
+        pattern = source.get("asset")
+        if source.get("asset_variant") and not source.get("asset"):
+            # A menu choice may come from an explicit glob matching an asset
+            # without a Linux filename marker. Preserve that deliberate choice.
+            assets = [
+                a
+                for a in asset_candidates(assets, pattern="*", kind=backend(source))
+                if asset_variant(a["name"], release["tag_name"])
+                == source["asset_variant"]
+            ]
+            pattern = "*"
+        elif source.get("asset_family") and not source.get("asset"):
             assets = preferred_app_assets(
-                asset_candidates(assets, kind=backend(source)), source["asset_family"]
+                asset_candidates(assets, kind=backend(source), prefer_arch=False),
+                source["asset_family"],
             )
-        selected = select_asset(assets, source.get("asset"), backend(source))
+        selected = select_asset(assets, pattern, backend(source))
         return {
             "kind": backend(source),
+            "runtime": source.get("runtime", "fhs"),
             **(
                 {
                     "program": (
@@ -649,7 +675,14 @@ def program_path(value):
     return value
 
 
-def asset_candidates(assets, pattern=None, kind="appimage"):
+def preferred_arch_assets(assets):
+    explicit = [
+        a for a in assets if re.search(r"(?i)(?:x86[_-]64|amd64|x64)", a["name"])
+    ]
+    return explicit or assets
+
+
+def asset_candidates(assets, pattern=None, kind="appimage", *, prefer_arch=True):
     if not isinstance(assets, list) or any(
         not isinstance(a, dict) or not isinstance(a.get("name"), str) for a in assets
     ):
@@ -721,15 +754,9 @@ def asset_candidates(assets, pattern=None, kind="appimage"):
         if kind != "appimage" and not pattern and not re.search(r"(?i)linux", name):
             continue
         candidates.append(asset)
-    if not pattern:
-        explicit = [
-            a
-            for a in candidates
-            if re.search(r"(?i)(?:x86[_-]64|amd64|x64)", a["name"])
-        ]
-        if explicit:
-            return explicit
-    return candidates
+    return (
+        preferred_arch_assets(candidates) if prefer_arch and not pattern else candidates
+    )
 
 
 def select_asset(assets, pattern=None, kind="appimage"):
@@ -763,15 +790,10 @@ def choose_asset(github, source):
         if not choice.isdigit() or not 1 <= int(choice) <= len(e.candidates):
             raise Error("Asset selection cancelled; nothing was installed.") from e
         filename = e.candidates[int(choice) - 1]["name"]
-        # Exact choice for this install; never silently broaden an update selector.
-        source["asset"] = (
-            filename.replace("[", "[[]").replace("?", "[?]").replace("*", "[*]")
-        )
-        print(
-            "Saved an exact asset selector. If a future release renames it, use obtain update NAME --asset 'GLOB'.",
-            file=sys.stderr,
-        )
-        return github.release(source)
+        source["asset"] = exact_asset(filename)
+        candidate = github.release(source)
+        remember_asset(source, filename, candidate["version"])
+        return candidate
 
 
 def choose_option(options, label, hint, interactive=True):
@@ -800,6 +822,94 @@ def asset_stem(filename):
         if filename.lower().endswith(suffix):
             return filename[: -len(suffix)]
     return filename
+
+
+def exact_asset(filename):
+    return filename.replace("[", "[[]").replace("?", "[?]").replace("*", "[*]")
+
+
+def asset_variant(filename, version):
+    """Remove only the release's version, retaining platform and variant markers."""
+    # Tags such as rust-v1.2.3 commonly use just v1.2.3 in filenames. Avoid
+    # replacing arbitrary numeric substrings (x64, glibc versions, etc.).
+    match = re.search(r"(?:^|[-/])v?(\d+(?:\.\d+)*(?:[-+][0-9A-Za-z.-]+)?)$", version)
+    if not match:
+        return filename
+    number = match[1]
+    occurrences = list(
+        re.finditer(
+            r"(?:^|[._-])(?P<value>v?" + re.escape(number) + r")(?=$|[._-])(?!\.\d)",
+            filename,
+        )
+    )
+    # A v-prefixed token identifies the release even when another token has
+    # the same number. Protect complete runtime and architecture tokens, so a
+    # release such as v17 cannot replace the tail of glibc-2.17 or x86_64.
+    protected = list(
+        re.finditer(
+            r"(?:^|[._-])(?:(?:glibc|musl)[._-]v?\d+(?:\.\d+)*|x86[_-]64)"
+            r"(?=$|[._-])",
+            filename,
+            re.IGNORECASE,
+        )
+    )
+    occurrences = [
+        item
+        for item in occurrences
+        if not re.search(r"\d\.$", filename[: item.start("value")])
+        and not any(
+            token.start() <= item.start("value") < token.end() for token in protected
+        )
+    ]
+    marked = [item for item in occurrences if item["value"].startswith("v")]
+    choices = marked or occurrences
+    if len(choices) != 1:
+        return filename
+    chosen = choices[0]
+    return (
+        filename[: chosen.start("value")]
+        + "{version}"
+        + filename[chosen.end("value") :]
+    )
+
+
+def remember_asset(source, filename, version):
+    source.pop("asset_family", None)
+    source["asset_variant"] = asset_variant(filename, version)
+    source["asset"] = None
+    print("Saved this release-file variant for future updates.", file=sys.stderr)
+
+
+def release_choices(source, assets):
+    """Prefer application identity first, then AppImage compatibility."""
+    choices = [
+        (kind, asset)
+        for kind in ("appimage", "archive", "binary")
+        for asset in asset_candidates(
+            assets, source.get("asset"), kind, prefer_arch=False
+        )
+    ]
+    main = []
+    if choices and not source.get("asset"):
+        app = source["repository"].split("/")[1]
+        main = [
+            item
+            for item in choices
+            if matches_app(item[1]["name"], app)
+            or matches_app(item[1]["name"], app + "-package")
+        ]
+        choices = main or choices
+        images = [item for item in choices if item[0] == "appimage"]
+        choices = images or choices
+        if main:
+            preferred = preferred_app_assets([asset for _, asset in choices], app)
+            choices = [item for item in choices if item[1] in preferred]
+        choices = [
+            (kind, asset)
+            for kind in ("appimage", "archive", "binary")
+            for asset in preferred_arch_assets([a for k, a in choices if k == kind])
+        ]
+    return choices, bool(main)
 
 
 def matches_app(filename, app):
@@ -831,28 +941,15 @@ def automatic_program(source):
 def discover_release(source, github):
     print("Looking for a Linux release…", flush=True)
     try:
-        _, assets = github.release_assets(source)
+        release, assets = github.release_assets(source)
     except NotFound as e:
         raise Error(
             "No public repository or supported GitHub release found. "
             "Use 'obtain inspect URL' for "
             "details, or use Nix directly for an upstream flake."
         ) from e
-    choices = [
-        (kind, asset)
-        for kind in ("appimage", "archive", "binary")
-        for asset in asset_candidates(assets, source.get("asset"), kind)
-    ]
+    choices, main = release_choices(source, assets)
     if choices:
-        main = []
-        if not source.get("asset"):
-            images = [item for item in choices if item[0] == "appimage"]
-            choices = images or choices
-            preferred = preferred_app_assets(
-                [asset for _, asset in choices], source["repository"].split("/")[1]
-            )
-            main = [item for item in choices if item[1] in preferred]
-            choices = main or choices
         index = choose_option(
             [asset["name"] for _, asset in choices],
             "a release file",
@@ -865,12 +962,7 @@ def discover_release(source, github):
         if not source.get("asset") and len(choices) == 1 and main:
             source["asset_family"] = source["repository"].split("/")[1]
         elif len(choices) > 1:
-            source["asset"] = (
-                asset["name"]
-                .replace("[", "[[]")
-                .replace("?", "[?]")
-                .replace("*", "[*]")
-            )
+            remember_asset(source, asset["name"], release["tag_name"])
         return github.release(source)
     raise Error(
         "No supported Linux release file matches this repository and selection. "
@@ -934,6 +1026,10 @@ def lock_release(name, candidate, interactive=False):
         "name": name,
         "hash": result["hash"],
         "nixpkgs": default_pin(),
+        "verification": {
+            "method": "github-digest" if digest else "local-sha256",
+            "hash": result["hash"],
+        },
     }
     if backend(candidate) == "archive" and not candidate.get("program"):
         record["program"] = archive_program(
@@ -945,37 +1041,49 @@ def lock_release(name, candidate, interactive=False):
 def inspect_repository(args, github):
     repo = repository(args.url)
     source = {"repository": repo}
-    print(f"Repository: {repo}")
     try:
         release, assets = github.release_assets(source)
-        print(f"Release: {clean(release['tag_name'])}")
-        for kind in ("appimage", "archive", "binary"):
-            eligible = asset_candidates(assets, kind=kind)
-            label = {
-                "appimage": "AppImages",
-                "archive": "Archives",
-                "binary": "Binaries",
-            }[kind]
-            print(
-                f"{label}: " + (", ".join(clean(a["name"]) for a in eligible) or "none")
-            )
-        choices = [
-            (kind, asset)
-            for kind in ("appimage", "archive", "binary")
-            for asset in asset_candidates(assets, kind=kind)
-        ]
-        images = [item for item in choices if item[0] == "appimage"]
-        choices = images or choices
-        preferred = preferred_app_assets(
-            [asset for _, asset in choices], repo.split("/")[1]
-        )
-        choices = [item for item in choices if item[1] in preferred] or choices
-        if len(choices) == 1:
-            print("Automatic x86_64 selection: " + clean(choices[0][1]["name"]))
-        elif choices:
-            print("Choose a release file with --asset FILENAME.")
+        choices, _ = release_choices(source, assets)
+        report = {
+            "repository": repo,
+            "found": True,
+            "version": release["tag_name"],
+            "assets": {
+                kind: [
+                    a["name"]
+                    for a in asset_candidates(assets, kind=kind, prefer_arch=False)
+                ]
+                for kind in ("appimage", "archive", "binary")
+            },
+            "automatic_selection": (
+                {"kind": choices[0][0], "asset_name": choices[0][1]["name"]}
+                if len(choices) == 1
+                else None
+            ),
+        }
     except NotFound:
+        report = {"repository": repo, "found": False}
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return
+    print(f"Repository: {repo}")
+    if not report["found"]:
         print("No public repository or published stable GitHub release found.")
+        return
+    print(f"Release: {clean(report['version'])}")
+    for kind, label in (
+        ("appimage", "AppImages"),
+        ("archive", "Archives"),
+        ("binary", "Binaries"),
+    ):
+        print(f"{label}: " + (", ".join(map(clean, report["assets"][kind])) or "none"))
+    if report["automatic_selection"]:
+        print(
+            "Automatic x86_64 selection: "
+            + clean(report["automatic_selection"]["asset_name"])
+        )
+    elif any(report["assets"].values()):
+        print("Choose a release file with --asset FILENAME.")
 
 
 def validate_lock(record, name):
@@ -1002,8 +1110,24 @@ def validate_lock(record, name):
         package_check(record["package"])
         executable_check(record["program"])
     else:
+        if record.get("runtime", "fhs") not in ("fhs", "direct") or (
+            backend(record) == "appimage" and record.get("runtime", "fhs") != "fhs"
+        ):
+            raise Error(f"Invalid compatibility runtime for {name}.")
+        if "recipe_hash" in record and not re.fullmatch(
+            r"[0-9a-f]{64}", record["recipe_hash"]
+        ):
+            raise Error(f"Invalid packaging recipe hash for {name}.")
         if not re.fullmatch(r"sha256-[A-Za-z0-9+/]{43}=", record.get("hash", "")):
             raise Error(f"Invalid SHA-256 lock for {name}.")
+        if "verification" in record:
+            evidence = record["verification"]
+            if (
+                not isinstance(evidence, dict)
+                or evidence.get("method") not in ("local-sha256", "github-digest")
+                or evidence.get("hash") != record["hash"]
+            ):
+                raise Error(f"Invalid verification evidence for {name}.")
         asset_url(record["url"], repo)
         if backend(record) == "archive":
             program_path(record.get("program"))
@@ -1019,6 +1143,10 @@ def validate_source_lock(source, record, name):
     repo = repository("https://github.com/" + source["repository"])
     if record["repository"] != repo or backend(source) != backend(record):
         raise Error(f"Source and lock disagree for {name}.")
+    if backend(record) != "flake" and source.get("runtime", "fhs") != record.get(
+        "runtime", "fhs"
+    ):
+        raise Error(f"Source and locked runtime disagree for {name}.")
 
 
 class Store:
@@ -1173,6 +1301,13 @@ class Store:
                 link.symlink_to(target)
 
     def journal(self, operation, name, source=None, record=None):
+        previous = self.installed(name)
+        if previous is not None:
+            if not isinstance(previous, dict):
+                raise Error(
+                    f"Invalid installed manifest for {name}; run 'obtain doctor {name}'."
+                )
+            validate_lock(previous, name)
         atomic_json(
             self.data / "pending.json",
             {
@@ -1180,7 +1315,7 @@ class Store:
                 "name": name,
                 "source": source,
                 "record": record,
-                "previous": self.installed(name),
+                "previous": previous,
             },
         )
 
@@ -1262,6 +1397,52 @@ class Store:
         self.journal("save", name, source, record)
         self.recover()
 
+    def pin_recipe(self, record):
+        """Retain packaging inputs independently of the installed CLI version."""
+        files = {name: (ROOT / name).read_text() for name in RECIPE_FILES}
+        digest = recipe_digest(files)
+        path = self.config / "recipes" / f"{digest}.json"
+        if path.exists():
+            self.recipe_files(digest)
+        else:
+            atomic_json(path, files)
+        return {**record, "recipe_hash": digest}
+
+    def recipe_files(self, digest):
+        files = load_json(
+            self.config / "recipes" / f"{digest}.json", max_bytes=512 * 1024
+        )
+        if (
+            not isinstance(files, dict)
+            or recipe_digest(files) != digest
+            or not {"build.nix", "recipe.nix", "payload.py", "appimage.py"}
+            <= files.keys()
+            or any(
+                not re.fullmatch(r"[a-z][a-z0-9_-]*\.(?:nix|py)", name)
+                or not isinstance(content, str)
+                for name, content in files.items()
+            )
+        ):
+            raise Error(
+                "Saved packaging recipe is missing or corrupt; restore the recipes directory."
+            )
+        return files
+
+    def build_recipe(self, record, directory):
+        digest = record.get("recipe_hash")
+        if not digest:
+            print(
+                "This older lock has no saved packaging recipe; using the current recipe. "
+                "Run 'obtain refresh-runtime NAME' to pin it.",
+                file=sys.stderr,
+            )
+            return ROOT / "build.nix"
+        files = self.recipe_files(digest)
+        directory.mkdir()
+        for name, content in files.items():
+            (directory / name).write_text(content)
+        return directory / "build.nix"
+
     def install(self, name, source, record):
         validate_source_lock(source, record, name)
         if backend(record) == "flake":
@@ -1272,6 +1453,7 @@ class Store:
         self.links(name, verify_only=True)
         self.profile(name).parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="obtain-") as tmp:
+            build_recipe = self.build_recipe(record, Path(tmp) / "recipe")
             manifest = Path(tmp) / "manifest.json"
             atomic_json(manifest, record)
             print(f"Building {name} {clean(record['version'])}…", flush=True)
@@ -1283,7 +1465,7 @@ class Store:
                     str(Path(tmp) / "result"),
                     "--json",
                     "--file",
-                    str(ROOT / "build.nix"),
+                    str(build_recipe),
                     "--argstr",
                     "manifestFile",
                     str(manifest),
@@ -1344,8 +1526,13 @@ class Store:
     def rollback(self, name):
         if backend(self.locks[name]) == "flake":
             raise legacy_flake_error(name, self.locks[name])
+        self.links(name, verify_only=True)
         generation, previous = self.previous_generation(name)
-        source = {**self.sources[name], "pinned": True}
+        source = {
+            **self.sources[name],
+            "pinned": True,
+            "runtime": previous.get("runtime", "fhs"),
+        }
         self.journal("rollback", name, source, previous)
         try:
             run(
@@ -1399,6 +1586,7 @@ def parser():
         help="Show supported Linux release files",
     )
     inspect.add_argument("url")
+    inspect.add_argument("--json", action="store_true")
     add = sub.add_parser("add", help="Track and install a GitHub release file")
     add.add_argument("url")
     add.add_argument("--name", type=name_check)
@@ -1423,15 +1611,29 @@ def parser():
     add.add_argument("--asset", help="Case-sensitive filename glob (quote it)")
     add.add_argument("--prereleases", action="store_true")
     add.add_argument(
+        "--runtime",
+        choices=["fhs", "direct"],
+        default="fhs",
+        help="Archive/binary compatibility runtime; direct omits support for downloaded helpers",
+    )
+    add.add_argument(
         "--track-only",
         action="store_true",
         help="Lock the release without installing",
     )
-    sub.add_parser("list", help="Show installed and locked versions")
+    listing = sub.add_parser("list", help="Show installed and locked versions")
+    listing.add_argument("--json", action="store_true")
     check = sub.add_parser(
         "check", help="Check upstream metadata without building or installing"
     )
     check.add_argument("name", nargs="?", type=name_check)
+    check.add_argument("--json", action="store_true")
+    refresh = sub.add_parser(
+        "refresh-runtime",
+        help="Refresh Nixpkgs and packaging for the locked app release",
+    )
+    refresh.add_argument("name", type=name_check)
+    refresh.add_argument("--runtime", choices=["fhs", "direct"])
     update = sub.add_parser(
         "update", help="Resolve and apply updates (pinned apps are skipped)"
     )
@@ -1570,6 +1772,11 @@ def doctor(args, store):
             installed == store.locks.get(name),
             "Installed manifest compared with the tracked lock",
         )
+        check(
+            "verification",
+            True,
+            installed.get("verification", {}).get("method", "legacy SHA-256 lock"),
+        )
         for label, link, target in (
             ("launcher", store.data / "bin" / name, executable),
             (
@@ -1703,6 +1910,9 @@ def add_source(args, store):
         "pinned": False,
     }
     source.update(asset=args.asset, prereleases=args.prereleases)
+    source["runtime"] = args.runtime
+    if kind == "appimage" and args.runtime != "fhs":
+        raise Error("--runtime direct applies only to archives and binaries.")
     if kind == "archive":
         source["program"] = args.program
         source["strip_components"] = args.strip_components
@@ -1735,9 +1945,14 @@ def add_command(args, store, github):
         candidate = choose_candidate()
     if name in store.sources:
         raise tracked_name_error(name, store)
+    if backend(source) == "appimage" and source["runtime"] != "fhs":
+        raise Error("--runtime direct applies only to archives and binaries.")
     print(f"Selected {clean(candidate['asset_name'])} ({clean(candidate['version'])})")
     print(candidate["release_url"])
-    record = lock_release(name, candidate, interactive=True)
+    record = store.pin_recipe(lock_release(name, candidate, interactive=True))
+    print(
+        "Verification: " + record.get("verification", {}).get("method", "local-sha256")
+    )
     if backend(source) == "archive":
         source.update(
             program=record["program"],
@@ -1752,7 +1967,25 @@ def add_command(args, store, github):
         store.install(name, source, record)
 
 
-def list_command(store):
+def list_command(store, json_output=False):
+    if json_output:
+        print(
+            json.dumps(
+                {
+                    "apps": [
+                        {
+                            "name": name,
+                            "source": store.sources[name],
+                            "locked": store.locks.get(name),
+                            "installed": store.installed(name),
+                        }
+                        for name in sorted(store.sources)
+                    ]
+                },
+                indent=2,
+            )
+        )
+        return
     if not store.sources:
         print("No apps tracked. Start with: obtain add https://github.com/owner/repo")
     else:
@@ -1812,10 +2045,19 @@ def batch_targets(args, store, batch_path):
 
 def batch_item(cmd, name, store, github, overrides):
     source = dict(store.sources[name])
+    old = store.locks.get(name, {})
     if backend(source) == "flake":
         raise legacy_flake_error(name, store.locks[name])
+    if source.get("asset_variant") and not source.get("asset"):
+        # Older selectors may have normalized runtime numbers alongside the
+        # release version. Repair them from the asset that was actually locked.
+        source["asset_variant"] = asset_variant(old["asset_name"], old["version"])
     if name in overrides:
+        if backend(source) == "archive":
+            source["auto_program"] = automatic_program(source)
         source["asset"] = overrides[name]
+        source.pop("asset_variant", None)
+        source.pop("asset_family", None)
     if source.get("pinned") and cmd == "update":
         if name in overrides:
             raise Error(
@@ -1824,7 +2066,6 @@ def batch_item(cmd, name, store, github, overrides):
         print(f"{name}: pinned; skipped")
         return
     candidate = github.release(source)
-    old = store.locks.get(name, {})
     if cmd == "update":
         current = store.installed(name)
     changed = not same_release(old, candidate)
@@ -1837,7 +2078,7 @@ def batch_item(cmd, name, store, github, overrides):
     else:
         print(f"{name}: locked release is current ({clean(candidate['version'])})")
     if cmd == "update":
-        record = lock_release(name, candidate) if changed else old
+        record = store.pin_recipe(lock_release(name, candidate)) if changed else old
         if backend(source) == "archive" and automatic_program(source):
             source.update(program=record["program"], auto_program=True)
         if current:
@@ -1848,6 +2089,14 @@ def batch_item(cmd, name, store, github, overrides):
         elif changed or source != store.sources[name]:
             store.save_record(name, source, record)
             print(f"{name}: lock updated; not installed")
+    return {
+        "name": name,
+        "status": "update-available" if changed else "current",
+        "pinned": bool(source.get("pinned")),
+        "locked_version": old.get("version"),
+        "upstream_version": candidate["version"],
+        "asset_name": candidate["asset_name"],
+    }
 
 
 def batch_command(args, store, github):
@@ -1855,6 +2104,8 @@ def batch_command(args, store, github):
     batch_path = store.data / f"{cmd}-batch.json"
     targets, overrides = batch_targets(args, store, batch_path)
     failures = []
+    results = []
+    json_output = getattr(args, "json", False)
     unfinished = dict.fromkeys(targets)
 
     def checkpoint():
@@ -1876,11 +2127,22 @@ def batch_command(args, store, github):
         with store.batch_saves():
             for name in targets:
                 try:
-                    batch_item(cmd, name, store, github, overrides)
+                    with (
+                        contextlib.redirect_stdout(sys.stderr)
+                        if json_output
+                        else contextlib.nullcontext()
+                    ):
+                        result = batch_item(cmd, name, store, github, overrides)
                     append_json(batch_path, name)
                     unfinished.pop(name)
+                    if json_output:
+                        results.append(result)
                 except (Error, OSError, ValueError, KeyError, TypeError) as e:
                     failures.append(name)
+                    if json_output:
+                        results.append(
+                            {"name": name, "status": "failed", "error": clean(e)}
+                        )
                     print(f"{name}: {clean(e)}", file=sys.stderr)
                     if (store.data / "pending.json").exists():
                         # Never replace an unreconciled operation's journal
@@ -1894,6 +2156,13 @@ def batch_command(args, store, github):
                         break
     finally:
         checkpoint()
+        if json_output:
+            print(
+                json.dumps(
+                    {"command": cmd, "apps": results, "unfinished": list(unfinished)},
+                    indent=2,
+                )
+            )
     if failures:
         raise Error(
             "Unfinished apps: "
@@ -1907,7 +2176,25 @@ def named_command(args, store):
     name = store.targets(args.name)[0]
     if backend(store.sources[name]) == "flake" and cmd not in ("info", "remove"):
         raise legacy_flake_error(name, store.locks[name])
-    if cmd == "install":
+    if cmd == "refresh-runtime":
+        source = dict(store.sources[name])
+        record = dict(store.locks[name])
+        if args.runtime:
+            if backend(record) == "appimage" and args.runtime != "fhs":
+                raise Error("--runtime direct applies only to archives and binaries.")
+            source["runtime"] = args.runtime
+        record["runtime"] = source.get("runtime", "fhs")
+        record["nixpkgs"] = default_pin()
+        record = store.pin_recipe(record)
+        current = store.installed(name)
+        if current and current != record:
+            store.install(name, source, record)
+        elif record != store.locks[name] or source != store.sources[name]:
+            store.save_record(name, source, record)
+        print(
+            f"Refreshed runtime for {name}; app release remains {clean(record['version'])}."
+        )
+    elif cmd == "install":
         if name not in store.locks:
             raise Error(f"No locked release; run 'obtain update {name}' first.")
         store.install(name, store.sources[name], store.locks[name])
@@ -1938,7 +2225,7 @@ def dispatch(args, store, github):
     if cmd == "add":
         add_command(args, store, github)
     elif cmd == "list":
-        list_command(store)
+        list_command(store, args.json)
     elif cmd in ("check", "update"):
         batch_command(args, store, github)
     elif cmd == "doctor":

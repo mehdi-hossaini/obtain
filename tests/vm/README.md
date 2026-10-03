@@ -33,7 +33,8 @@ they run the packaged CLI source and leave the CLI and Nix implementation intact
 | --- | --- |
 | CLI and selection | Help, empty state, argument validation, inspection, ambiguous assets, architecture filtering, prereleases, unsupported releases |
 | Release lifecycle | Install, launch, desktop entry, check, pin, update, rollback, remove, re-add, track-only install |
-| Payload lifecycle | tar.gz, ZIP, standalone ELF, bundled libraries, inherited loader environment, doctor, update, rollback, removal |
+| Payload lifecycle | tar.gz, ZIP, standalone ELF, bundled libraries, inherited loader environment, doctor, update, rollback, removal; bundled desktop metadata and icons; shared-library graphics loading and bundled SONAME precedence in direct/FHS modes |
+| Runtime lifecycle | Direct executable launch, smaller closure, refresh to FHS without changing the release, rollback of runtime and policy |
 | Integrity | SHA-256 mismatch, malformed AppImages, hostile archives, foreign ELF, malformed API records |
 | Network | HTTP 503, rate limit, 404, redirect, malformed JSON, ETag/304 cache and corrupt-cache recovery |
 | State and concurrency | Duplicate tracking, launcher collision, malformed state, file locking, interrupted remove |
@@ -43,7 +44,7 @@ they run the packaged CLI source and leave the CLI and Nix implementation intact
 | Scope boundary | Flake-only repository is rejected; unsupported backend names fail before network access |
 | Reboot | Saved state, executable, and rollback generations survive guest reboot |
 
-The 38 Python scenario groups have separate XDG state. The reboot case uses the
+The 40 Python scenario groups have separate XDG state. The reboot case uses the
 Home Manager user's default paths. Signal tests cover specific durable
 boundaries; they do not cover every possible power-loss timing. The disk-full
 tests exhaust a 96 KiB guest tmpfs.

@@ -4,6 +4,7 @@
 }:
 let
   kind = manifest.kind or "appimage";
+  runtime = manifest.runtime or "fhs";
   imageVersion = builtins.substring 0 16 (builtins.hashString "sha256" manifest.version);
   payloadLibraries = [
     pkgs.stdenv.cc.cc.lib
@@ -89,9 +90,11 @@ let
     # Desktop archives can link these directly even when shipping their own
     # X11 libraries (for example Zed). Only referenced libraries enter RPATH.
     buildInputs = payloadLibraries ++ graphicsLibraries ++ desktopLibraries;
-    # dlopen() dependencies do not appear in ELF's DT_NEEDED list. Add their
-    # paths to every bundled ELF, including helper processes, not just the CLI.
-    runtimeDependencies = graphicsLibraries;
+    # dlopen() dependencies do not appear in ELF's DT_NEEDED list. Append fallback
+    # paths to executables and shared libraries, after resolved bundle dependencies.
+    # runtimeDependencies would prepend them only to executables, overriding a
+    # bundled library with the same SONAME and missing shared-library dlopen calls.
+    appendRunpaths = map (package: "${pkgs.lib.getLib package}/lib") graphicsLibraries;
     dontUnpack = true;
     dontConfigure = true;
     dontBuild = true;
@@ -125,7 +128,7 @@ let
         "binary"
       ]
     then
-      payloadRuntime
+      (if runtime == "direct" then payload else payloadRuntime)
     else
       pkgs.appimageTools.wrapAppImage {
         # Desktop libraries used by Flutter AppImages such as AppFlowy.
@@ -146,20 +149,28 @@ let
         version = imageVersion;
         src = extractedImage;
       };
-  desktop = pkgs.makeDesktopItem {
-    name = "obtain-${manifest.name}";
-    desktopName = manifest.name;
-    exec = "${wrapped}/bin/${manifest.name}";
-    icon = "application-x-executable";
-    categories = [ "Utility" ];
-    comment = "Managed by Obtain";
-  };
+  desktop =
+    pkgs.runCommand "obtain-${manifest.name}-desktop" { nativeBuildInputs = [ pkgs.python3 ]; }
+      ''
+        python3 ${./desktop.py} ${
+          if kind == "appimage" then extractedImage else "${payload}/lib/obtain-payload"
+        } \
+          "$out" ${pkgs.lib.escapeShellArg manifest.name} \
+          ${pkgs.lib.escapeShellArg "${wrapped}/bin/${manifest.name}"} \
+          ${pkgs.lib.escapeShellArg kind} ${pkgs.lib.escapeShellArg (manifest.program or "AppRun")}
+      '';
 in
 assert builtins.elem kind [
   "appimage"
   "archive"
   "binary"
 ];
+assert
+  builtins.elem runtime [
+    "fhs"
+    "direct"
+  ]
+  && (kind != "appimage" || runtime == "fhs");
 pkgs.symlinkJoin {
   name = "obtain-${manifest.name}-${
     builtins.substring 0 16 (builtins.hashString "sha256" (builtins.toJSON manifest))

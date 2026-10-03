@@ -22,6 +22,9 @@ import time
 import traceback
 import fcntl
 
+import desktop
+import obtain as cli
+
 # Crash status and stderr are enough for these probes; do not write huge GUI core dumps.
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
@@ -93,12 +96,8 @@ def command(args, env, log, timeout=60):
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
-            os.killpg(proc.pid, signal.SIGTERM)
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
+        finally:
+            cleanup_process(proc)
         stream.write(f"\n[exit={proc.returncode}, timeout={timed_out}]\n")
     return {
         "exit": proc.returncode,
@@ -106,6 +105,94 @@ def command(args, env, log, timeout=60):
         "seconds": round(time.monotonic() - started, 2),
         "log": str(log.relative_to(OUTPUT)),
     }
+
+
+def signal_group(group_id, signum):
+    try:
+        os.killpg(group_id, signum)
+    except ProcessLookupError:
+        pass
+
+
+def cleanup_process(proc):
+    """Reap the leader and stop descendants even when the leader already exited."""
+    signal_group(proc.pid, signal.SIGTERM)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+    finally:
+        signal_group(proc.pid, signal.SIGKILL)
+        proc.wait()
+
+
+def cli_status(result):
+    if result.get("timeout"):
+        return "launch_timeout"
+    return "cli_startup_passed" if result["exit"] == 0 else "launch_failed"
+
+
+def desktop_command(entry, path):
+    """Expand desktop field codes for a launch without selected files or URLs."""
+    tokens = desktop.parse_exec(entry["Exec"])
+    if not tokens or not tokens[0].startswith("/nix/store/"):
+        raise ValueError("Invalid desktop executable")
+    escapes = {"s": " ", "n": "\n", "t": "\t", "r": "\r", "\\": "\\"}
+
+    def value(key):
+        return re.sub(
+            r"\\([sntr\\])",
+            lambda match: escapes[match[1]],
+            entry.get(key, ""),
+        )
+
+    replacements = {"%": "%", "c": value("Name"), "k": str(path)}
+    replacements.update(dict.fromkeys("fFuU", ""))
+    arguments = [tokens[0]]
+    for token in tokens[1:]:
+        if token in ("%f", "%F", "%u", "%U"):
+            continue
+        if token == "%i":
+            if value("Icon"):
+                arguments.extend(("--icon", value("Icon")))
+        else:
+            arguments.append(re.sub(r"%(.)", lambda m: replacements[m[1]], token))
+    return arguments
+
+
+def recipe_files(config, digest):
+    store = cli.Store()
+    store.config = config
+    return store.recipe_files(digest)
+
+
+def restore_locked_state(config, name, source, record, recipe=None):
+    """Restore captured inputs, including the exact content-hashed packaging."""
+    record = dict(record, name=name)
+    cli.validate_source_lock(source, record, name)
+    digest = record.get("recipe_hash")
+    if digest:
+        if recipe is None:
+            raise ValueError("Captured lock requires its locked_recipe snapshot")
+        if cli.recipe_digest(recipe) != digest:
+            raise cli.Error("Captured packaging recipe does not match the locked hash")
+        cli.atomic_json(config / "recipes" / f"{digest}.json", recipe)
+        recipe_files(config, digest)
+    for filename, item in (("sources.json", source), ("lock.json", record)):
+        cli.atomic_json(config / filename, {"schema": 1, "apps": {name: item}})
+
+
+def captured_recipe(root, row, config):
+    digest = row["lock"].get("recipe_hash")
+    if not digest:
+        return None
+    path = root / row.get(
+        "recipe_snapshot", f"{row['name']}/state/.config/obtain/recipes/{digest}.json"
+    )
+    if path.is_file():
+        return cli.load_json(path, max_bytes=512 * 1024)
+    # Earlier reports kept these inputs only in the preserved guest HOME.
+    return recipe_files(config, digest)
 
 
 def failure(result, log, stage):
@@ -391,18 +478,16 @@ def gui_probe(
                 "exit_before_cleanup": proc.poll(),
                 "observations": observations,
                 "actions": performed,
+                "action_checks": {
+                    f"gui-action-{index}": action["result"]["exit"] == 0
+                    and not action["result"]["timeout"]
+                    for index, action in enumerate(performed, 1)
+                },
                 "process_checks": process_checks,
                 "log": str((directory / "launch.log").relative_to(OUTPUT)),
             }
         finally:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-                proc.wait(timeout=10)
-            except ProcessLookupError:
-                pass
-            except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
+            cleanup_process(proc)
             # Close any remaining top-level windows from this app, never host windows.
             for wid in windows() - before:
                 subprocess.run(
@@ -423,6 +508,7 @@ def pty_probe(executable, arguments, inputs, env, directory):
         )
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
     status = None
+    timed_out = False
     pending = list(inputs)
     next_input = started + 6
     raw = bytearray()
@@ -474,20 +560,23 @@ def pty_probe(executable, arguments, inputs, env, directory):
                 if done:
                     status = code
                     break
+            else:
+                timed_out = True
         finally:
             if status is None:
                 done, code = os.waitpid(pid, os.WNOHANG)
                 if done:
                     status = code
-                else:
-                    os.killpg(pid, signal.SIGKILL)
-                    _, status = os.waitpid(pid, 0)
+            signal_group(pid, signal.SIGKILL)
+            if status is None:
+                _, status = os.waitpid(pid, 0)
             os.close(fd)
     exit_code = os.waitstatus_to_exitcode(status)
     (directory / "launch.log").write_bytes(raw)
     return {
-        "status": "cli_startup_passed" if exit_code == 0 else "launch_failed",
+        "status": cli_status({"exit": exit_code, "timeout": timed_out}),
         "exit": exit_code,
+        "timeout": timed_out,
         "seconds": round(time.monotonic() - started, 2),
         "log": str((directory / "launch.log").relative_to(OUTPUT)),
         "recording": str((directory / "terminal.cast").relative_to(OUTPUT)),
@@ -554,14 +643,13 @@ def test(index, spec):
     if restored:
         direct = False
         config = home / ".config/obtain"
-        config.mkdir(parents=True, exist_ok=True)
-        for filename, record in (
-            ("sources.json", spec["locked_source"]),
-            ("lock.json", dict(spec["locked_record"], name=name)),
-        ):
-            (config / filename).write_text(
-                json.dumps({"schema": 1, "apps": {name: record}}, indent=2) + "\n"
-            )
+        restore_locked_state(
+            config,
+            name,
+            spec["locked_source"],
+            spec["locked_record"],
+            spec.get("locked_recipe"),
+        )
         (directory / "select.log").write_text(
             "Restored captured source and release lock; only the local app name changed. "
             "No GitHub release discovery was performed.\n"
@@ -572,7 +660,7 @@ def test(index, spec):
             args, env, directory / "select.log", timeout=780 if direct else 180
         )
     result["stages"][stage] = selection
-    if selection["exit"]:
+    if selection["exit"] or selection["timeout"]:
         result["status"] = failure(selection, directory / "select.log", stage)
         save()
         return
@@ -586,7 +674,7 @@ def test(index, spec):
             ["obtain", "install", name], env, directory / "install.log", timeout=600
         )
         result["stages"]["installation"] = install
-        if install["exit"]:
+        if install["exit"] or install["timeout"]:
             result["status"] = failure(install, directory / "install.log", "install")
             save()
             return
@@ -601,10 +689,7 @@ def test(index, spec):
     desktop = data / "applications" / f"obtain-{name}.desktop"
     parsed = configparser.ConfigParser(interpolation=None)
     parsed.read(desktop)
-    desktop_exec = shlex.split(parsed["Desktop Entry"]["Exec"])
-    assert len(desktop_exec) == 1 and desktop_exec[0].startswith("/nix/store/"), (
-        "Invalid desktop Exec"
-    )
+    desktop_exec = desktop_command(parsed["Desktop Entry"], desktop)
     assert os.access(desktop_exec[0], os.X_OK), "Desktop target not executable"
     result["installed_store_path"] = str(profile.resolve())
     result["installed_verified"] = True
@@ -626,7 +711,7 @@ def test(index, spec):
     if spec["probe"] == "gui":
         result["runtime"] = gui_probe(
             desktop_exec[0],
-            arguments,
+            [*desktop_exec[1:], *arguments],
             env,
             directory,
             spec.get("gui_actions", []),
@@ -647,10 +732,9 @@ def test(index, spec):
             timeout=spec.get("probe_seconds", 30),
         )
         result["runtime"] = runtime
-        result["status"] = (
-            "cli_startup_passed" if runtime["exit"] == 0 else "launch_failed"
-        )
+        result["status"] = cli_status(runtime)
     checks = dict(result["runtime"].get("process_checks", {}))
+    checks.update(result["runtime"].get("action_checks", {}))
     for probe in spec.get("additional_probes", []):
         label = probe["label"]
         assert re.fullmatch(r"[a-z][a-z0-9-]{0,31}", label)
@@ -688,25 +772,36 @@ def test(index, spec):
     capture_state(result)
     removal = command(["obtain", "remove", name], env, directory / "remove.log")
     result["stages"]["removal"] = removal
-    result["removal_verified"] = removal["exit"] == 0 and links_removed(
-        launcher, desktop
+    result["removal_verified"] = (
+        removal["exit"] == 0
+        and not removal["timeout"]
+        and links_removed(launcher, desktop)
     )
     if not result["removal_verified"]:
         result["status"] = "removal_failed"
     save()
 
 
-def capture_state(result):
+def capture_state(result, home=None):
     """Keep failed install state and app-owned logs alongside command output."""
     name = result.get("name", f"{CASE_PREFIX}-{result['index']:03d}")
     directory = OUTPUT / name
-    home = Path("/home/alice/live-apps") / name
+    if home is None:
+        home = Path("/home/alice/live-apps") / name
     paths = [
         ".config/obtain/sources.json",
         ".config/obtain/lock.json",
         ".cache/obtain/last-command.log",
         *result.get("capture_files", []),
     ]
+    digest = result.get("lock", {}).get("recipe_hash")
+    if digest:
+        recipe_files(home / ".config/obtain", digest)
+        filename = f".config/obtain/recipes/{digest}.json"
+        paths.append(filename)
+        result["recipe_snapshot"] = str(
+            (directory / "state" / filename).relative_to(OUTPUT)
+        )
     for filename in paths:
         source = home / filename
         if source.is_file():
@@ -737,7 +832,7 @@ if __name__ == "__main__":
                 )
         try:
             capture_state(REPORT["results"][-1])
-        except OSError:
+        except (OSError, cli.Error, ValueError):
             REPORT["results"][-1].update(
                 status="harness_error", capture_error=traceback.format_exc()
             )

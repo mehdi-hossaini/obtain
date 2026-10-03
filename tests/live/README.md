@@ -64,6 +64,10 @@ A follow-up may contain a subset of the five apps; its requested count is
 recorded explicitly rather than being counted as another complete five-app run.
 To investigate runtime failures after API throttling, a follow-up can provide
 `locked_source` and `locked_record` captured from a previous `obtain info` output.
+For a record with `recipe_hash`, also provide `locked_recipe`: the JSON object
+from the original case's `state/.config/obtain/recipes/HASH.json` snapshot.
+The report's `recipe_snapshot` identifies that evidence file. Missing or changed
+snapshots stop the follow-up; the harness never substitutes current packaging.
 The harness restores those records with a fresh local name and calls
 `obtain install`, keeping asset identity, hashes, and the Nixpkgs pin unchanged.
 It labels this as `restore_lock` and skips metadata checks explicitly. It is
@@ -108,7 +112,8 @@ For each repository the runner:
 1. Executes `obtain add URL --name repo-NNN --type TYPE --track-only`.
 2. Executes `obtain install repo-NNN` if locking succeeded.
 3. Compares the installed manifest with the saved lock, checks the profile,
-   executable symlink, absolute desktop target, and `obtain info`.
+   executable symlink, absolute desktop target and its validated launch arguments,
+   and `obtain info`.
 4. Runs a CLI help/version probe, or starts the desktop target in Xvfb/Openbox
    with software rendering. A GUI pass requires a visible new window for at
    least the last five observations of a 25-second probe. It saves a screenshot
@@ -118,6 +123,9 @@ For each repository the runner:
 Each repository has isolated HOME and XDG state. The guest shares only immutable
 Nix downloads among cases. Limits are 180 seconds for selection/download and 600
 seconds for installation. Timeouts are inconclusive, not proof of incompatibility.
+They never receive a passing outcome, even when termination makes a command exit
+successfully. Probe cleanup stops the complete subprocess group, including
+helpers whose launcher has already exited.
 Unmodified default selection is tested unless an explicit override appears in the
 cohort. Ambiguous assets, prerelease-only projects, redirected repositories and
 unlabelled architectures may need user choices; the runner does not silently
@@ -139,7 +147,9 @@ services and long-running stability need app-specific tests on a real desktop.
 To repeat installation and launch checks for the already resolved real assets,
 reuse the preserved VM disk. The runner restores each app's previously captured
 CLI source and lock state and calls `obtain install`. It does not perform new
-GitHub API discovery. Original observations remain in `report.json`.
+GitHub API discovery. Content-hashed recipe snapshots are restored alongside the
+locks, preserving the original packaging inputs. Original observations remain
+in `report.json`.
 
 ```sh
 OBTAIN_LIVE_REPROBE=1 XDG_RUNTIME_DIR=/tmp/obtain-live-work \

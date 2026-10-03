@@ -309,7 +309,10 @@ class StateTests(unittest.TestCase):
         ):
             o.dispatch(o.parser().parse_args(["update"]), self.store, github)
         install.assert_not_called()
-        self.assertEqual(self.store.locks["app"], record("v2"))
+        locked = dict(self.store.locks["app"])
+        digest = locked.pop("recipe_hash")
+        self.assertTrue((self.store.config / "recipes" / f"{digest}.json").is_file())
+        self.assertEqual(locked, record("v2"))
 
     def test_check_reports_partial_failure(self):
         self.store.sources["other"] = source()

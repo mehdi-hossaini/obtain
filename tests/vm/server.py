@@ -19,6 +19,8 @@ PAYLOADS = {
     "link",
     "script",
     "foreign-payload",
+    "graphics-helper",
+    "graphics-precedence",
 }
 
 
@@ -119,6 +121,8 @@ class Handler(BaseHTTPRequestHandler):
                 "zip": f"zip-{version}.zip",
                 "binary": f"binary-{version}",
                 "foreign-payload": "foreign.tar.gz",
+                "graphics-helper": f"graphics-helper-{version}.tar.gz",
+                "graphics-precedence": f"graphics-precedence-{version}.tar.gz",
             }.get(repo, f"{repo}.tar.gz")
             return (ROOT / "payloads" / filename).read_bytes()
         if repo == "invalid-image" or (repo == "base" and version == 3):

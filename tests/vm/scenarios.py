@@ -805,6 +805,18 @@ class Scenarios(unittest.TestCase):
                     else []
                 )
                 self.cli("add", URL + repo, *args)
+                if repo == "archive":
+                    desktop = self.root / "data/applications/obtain-archive.desktop"
+                    entry = desktop.read_text()
+                    self.assertIn("Name=Fixture Application", entry)
+                    self.assertIn("Terminal=false", entry)
+                    self.assertIn(" --fixture %U", entry)
+                    icon = next(
+                        line[5:]
+                        for line in entry.splitlines()
+                        if line.startswith("Icon=")
+                    )
+                    self.assertTrue(Path(icon).is_file())
                 self.assertRegex(
                     run([str(self.data / "bin" / repo)], self.env),
                     r"^payload 1 zlib \d",
@@ -851,6 +863,62 @@ class Scenarios(unittest.TestCase):
                 self.cli("remove", repo)
                 self.assertFalse((self.data / "bin" / repo).exists())
                 control()
+
+    def test_47_direct_runtime_refresh_and_rollback(self):
+        self.add("binary", None, "--runtime", "direct")
+        original = self.info("binary")
+        self.assertEqual(original["locked"]["runtime"], "direct")
+        self.assertEqual(original["locked"]["verification"]["method"], "github-digest")
+        self.assertRegex(
+            run([str(self.data / "bin/binary")], self.env), r"^payload 1 zlib \d"
+        )
+
+        def closure_size():
+            paths = json.loads(
+                run(
+                    [
+                        "nix",
+                        "path-info",
+                        "--json-format",
+                        "1",
+                        "--json",
+                        "--recursive",
+                        str((self.data / "profiles/binary").resolve()),
+                    ],
+                    self.env,
+                )
+            )
+            return sum(path["narSize"] for path in paths.values())
+
+        direct_size = closure_size()
+        self.cli("pin", "binary")
+        request_count = len(self.requests())
+        self.cli("refresh-runtime", "binary", "--runtime", "fhs")
+        self.assertEqual(len(self.requests()), request_count)
+        refreshed = self.info("binary")
+        self.assertTrue(refreshed["source"]["pinned"])
+        self.assertEqual(refreshed["locked"]["runtime"], "fhs")
+        for key in ("version", "asset_id", "url", "hash"):
+            self.assertEqual(refreshed["locked"][key], original["locked"][key])
+        self.assertGreater(closure_size(), direct_size)
+        self.cli("rollback", "binary")
+        self.assertEqual(self.info("binary")["installed"], original["installed"])
+        self.assertEqual(self.info("binary")["source"]["runtime"], "direct")
+        self.assertRegex(
+            run([str(self.data / "bin/binary")], self.env), r"^payload 1 zlib \d"
+        )
+
+    def test_50_graphics_fallbacks_preserve_bundle_and_shared_library_lookups(self):
+        for repo, expected in (
+            ("graphics-helper", "shared-library graphics loaded"),
+            ("graphics-precedence", "bundled graphics selected"),
+        ):
+            for runtime in ("direct", "fhs"):
+                with self.subTest(repo=repo, runtime=runtime):
+                    name = f"{repo}-{runtime}"
+                    self.add(repo, name, "--runtime", runtime)
+                    self.app(name, expected)
+                    self.cli("remove", name)
 
     def test_44_malformed_archives_preserve_installed_app(self):
         self.add()
@@ -979,9 +1047,13 @@ if __name__ == "__main__":
         reboot(sys.argv[1] == "--verify-reboot")
     else:
         cases = list(unittest.defaultTestLoader.loadTestsFromTestCase(Scenarios))
-        # Exercise the newly added backends first for faster regression feedback.
+        # Exercise runtime refresh and new backends first for faster feedback.
         cases.sort(
-            key=lambda case: (int(case._testMethodName.split("_")[1]) < 43, case.id())
+            key=lambda case: (
+                case._testMethodName != "test_47_direct_runtime_refresh_and_rollback",
+                int(case._testMethodName.split("_")[1]) < 43,
+                case.id(),
+            )
         )
         result = unittest.TextTestRunner(verbosity=2, resultclass=JsonResult).run(
             unittest.TestSuite(cases)

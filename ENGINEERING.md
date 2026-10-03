@@ -11,14 +11,17 @@ before implementation.
 
 | Boundary | Invariant | Verification |
 |---|---|---|
-| GitHub metadata | HTTPS metadata stays on GitHub; a response is at most 8 MiB before JSON parsing. Oversized or unreadable caches are discarded; cache writes are optional. | `test_adversarial.py`, `test_github_efficiency.py` |
+| GitHub metadata | HTTPS metadata stays on GitHub; a response is at most 8 MiB before JSON parsing. Oversized or unreadable caches are discarded; cache writes are optional. Truncated HTTP responses fail one batch item and allow the next app to be checked. | `test_adversarial.py`, `test_github_efficiency.py`, `test_review_regressions.py` |
 | External commands | Captured output is at most 8 MiB; stdout and stderr are drained together so either pipe can make progress. Failed commands keep bounded diagnostic tails. | `test_process_io.py` |
-| Release archive | Discovery and extraction share path, link, member, expanded-size, and implicit-directory validation before executing any bundled program. | `test_payload_links.py`, `test_payload_efficiency.py`, VM archive scenarios |
+| Release archive | Discovery and extraction share path, link, member, expanded-size, and implicit-directory validation before executing any bundled program. Decoder memory is bounded; ZIP output sizes and checksums are verified. | `test_payload_links.py`, `test_payload_efficiency.py`, `test_payload_decompression.py`, VM archive scenarios |
+| ELF library lookup | Graphics fallback paths cover executable and shared-library `dlopen` calls while preserving bundled library precedence. | VM graphics fallback scenario |
 | Locked release | Repository, architecture, hash, and executable must match the saved lock before an install or rollback. | `test_obtain.py`, VM scenarios |
+| Packaging inputs | New locks retain content-hashed recipe/helper snapshots; rebuilds verify those inputs. Runtime refresh keeps upstream release identity and pins. | `test_release_updates.py` |
+| Desktop integration | Extracted metadata is bounded; launch arguments follow desktop quoting rules, archive entries match the selected program, and AppImages use their primary root entry. Icons stay inside the bundle and discovery executes no downloaded program. | `test_desktop.py` |
 | Tracked state | Source and lock names, repositories, and package types must agree after recovery and before installation. | `test_obtain.py`, `test_batch_efficiency.py` |
 | Earlier flake records | Existing flake sources and locks remain readable and removable; release app batches continue while flake items report migration guidance. | `test_legacy_flakes.py` |
-| Profile switch | The durable journal records intent before `nix-env` changes the profile. Recovery reads the actual installed manifest before reconciling state. | `test_batch_efficiency.py`, `test_process_io.py`, VM interruption scenarios |
-| Managed launchers | Existing files and links owned by others are never replaced. | `test_obtain.py`, VM ownership scenarios |
+| Profile switch | The durable journal records intent before `nix-env` changes the profile. Its previous manifest is validated before writing. Recovery reads the actual installed manifest before reconciling state. | `test_batch_efficiency.py`, `test_process_io.py`, `test_review_regressions.py`, VM interruption scenarios |
+| Managed launchers | Existing files and links owned by others are never replaced; install, rollback, and removal check ownership before profile changes. | `test_obtain.py`, `test_review_regressions.py`, VM ownership scenarios |
 | Inspection | Upstream metadata inspection neither loads nor recovers tracked state and does not acquire the Store lock. | `test_cli.py` |
 | Diagnostics | Corrupt installed manifests produce failed checks; optional log failures preserve probe results and JSON reports. | `test_doctor_reliability.py` |
 
